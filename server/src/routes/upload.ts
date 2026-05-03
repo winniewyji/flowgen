@@ -20,6 +20,14 @@ import {
 
 const router = Router();
 
+// 上传配置 - 可通过环境变量调整
+const UPLOAD_CONFIG = {
+  maxFiles: parseInt(process.env.MAX_UPLOAD_FILES || '20', 10),        // 最大文件数
+  maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '50', 10) * 1024 * 1024,  // 单文件最大 50MB
+  maxTotalSize: parseInt(process.env.MAX_TOTAL_SIZE || '200', 10) * 1024 * 1024,  // 总大小最大 200MB
+  supportedTypes: ['pdf', 'excel', 'word', 'csv', 'txt', 'markdown', 'image']
+};
+
 // 获取 Confluence 配置
 function getConfluenceConfig() {
   return {
@@ -55,6 +63,42 @@ router.post('/upload/files', async (req: Request, res: Response) => {
       res.status(400).json({ success: false, error: '缺少文件数据' });
       return;
     }
+
+    // 验证文件数量
+    if (files.length > UPLOAD_CONFIG.maxFiles) {
+      res.status(400).json({ 
+        success: false, 
+        error: `文件数量超过限制，最多 ${UPLOAD_CONFIG.maxFiles} 个文件` 
+      });
+      return;
+    }
+
+    // 计算总大小并验证
+    let totalSize = 0;
+    for (const file of files) {
+      // 估算 base64 大小（大约是原文件的 4/3）
+      const base64Size = file.data ? file.data.length : 0;
+      const estimatedSize = (base64Size * 3) / 4;
+      totalSize += estimatedSize;
+      
+      if (estimatedSize > UPLOAD_CONFIG.maxFileSize) {
+        res.status(400).json({ 
+          success: false, 
+          error: `文件 ${file.name} 超过大小限制 (最大 ${Math.round(UPLOAD_CONFIG.maxFileSize / 1024 / 1024)}MB)` 
+        });
+        return;
+      }
+    }
+
+    if (totalSize > UPLOAD_CONFIG.maxTotalSize) {
+      res.status(400).json({ 
+        success: false, 
+        error: `总文件大小超过限制 (最大 ${Math.round(UPLOAD_CONFIG.maxTotalSize / 1024 / 1024)}MB)` 
+      });
+      return;
+    }
+
+    console.log(`📤 开始处理 ${files.length} 个文件，总大小约 ${Math.round(totalSize / 1024 / 1024)}MB`);
 
     const finalModel = model || 'minimax';
     const finalOutputFormat = outputFormat || 'text';
@@ -120,13 +164,31 @@ router.post('/upload/files', async (req: Request, res: Response) => {
               continue;
             }
           case 'pdf':
+            try {
+              const pdfResult = await parsePDF(Buffer.from(content));
+              parsedContent = pdfResult.text;
+            } catch {
+              parsedContent = content.substring(0, 50000);
+            }
+            break;
           case 'excel':
+            try {
+              const excelResult = await parseExcel(Buffer.from(content));
+              parsedContent = excelResult.text;
+            } catch {
+              parsedContent = content.substring(0, 50000);
+            }
+            break;
           case 'word':
+            try {
+              parsedContent = await parseWord(Buffer.from(content));
+            } catch {
+              parsedContent = content.substring(0, 50000);
+            }
+            break;
           case 'txt':
           case 'markdown':
-            // 这些类型直接用内容分析
-            parsedContent = content.substring(0, 50000);
-            break;
+            parsedContent = content.substring(0, 100000);
           default:
             parsedContent = content.substring(0, 10000);
         }
