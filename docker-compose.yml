@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  flowgen-server:
+    build: .
+    container_name: flowgen-server
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY}
+      - MINIMAX_BASE_URL=${MINIMAX_BASE_URL:-https://api.minimax.chat/v1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - JIRA_BASE_URL=${JIRA_BASE_URL}
+      - JIRA_EMAIL=${JIRA_EMAIL}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN}
+      - JIRA_DEFAULT_PROJECT=${JIRA_DEFAULT_PROJECT}
+      - JIRA_DEFAULT_TYPE=${JIRA_DEFAULT_TYPE:-Story}
+      - CONFLUENCE_BASE_URL=${CONFLUENCE_BASE_URL}
+      - CONFLUENCE_EMAIL=${CONFLUENCE_EMAIL}
+      - CONFLUENCE_API_TOKEN=${CONFLUENCE_API_TOKEN}
+      - CONFLUENCE_DEFAULT_SPACE=${CONFLUENCE_DEFAULT_SPACE}
+      - CONFLUENCE_DEFAULT_PARENT_PAGE_ID=${CONFLUENCE_DEFAULT_PARENT_PAGE_ID}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
