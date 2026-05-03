@@ -2,7 +2,7 @@
  * 文档生成服务 - 支持生成 PPT、Excel、Word 等
  * 基于 AI 提示词生成结构化文档内容
  */
-import type { GenerateResult } from './ai/types.js';
+import type { GenerateResult } from '../ai/types.js';
 
 export type DocumentType = 'pptx' | 'xlsx' | 'docx' | 'markdown';
 
@@ -197,4 +197,4 @@ export function generateXLSX(data: {
   }
 }
 
-export * from './ai/types.js';
+export * from '../ai/types.js';

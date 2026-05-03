@@ -28,10 +28,11 @@ router.post('/diagram/generate', async (req: Request, res: Response) => {
     const validChartTypes: ChartType[] = ['flowchart', 'sequence', 'gantt', 'class', 'state', 'er'];
     const validModels = ['minimax', 'openai'];
 
-    const finalChartType = (validChartTypes.includes(chartType as ChartType) 
+    const finalChartType: ChartType = (validChartTypes.includes(chartType as ChartType) 
       ? chartType 
       : 'flowchart') as ChartType;
-    const finalModel = (validModels.includes(model) ? model : 'minimax');
+    const finalModelStr: string = model || 'minimax';
+    const finalModel: string = validModels.includes(finalModelStr) ? finalModelStr : 'minimax';
 
     const result = await generateDiagram({
       prompt,
