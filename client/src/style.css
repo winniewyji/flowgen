@@ -8,12 +8,52 @@
   --border: #e2e8f0;
   --success: #10b981;
   --error: #ef4444;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
 
 body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  min-height: -webkit-fill-available;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top));
+}
+
+@media (max-width: 600px) {
+  .app {
+    padding: 12px;
+  }
+  .header h1 {
+    font-size: 1.8rem;
+  }
+  .panel {
+    padding: 16px;
+    border-radius: 12px;
+  }
+  .chart-types {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .model-selector {
+    flex-direction: column;
+  }
+  .model-btn {
+    width: 100%;
+  }
 }
 
 .app {
