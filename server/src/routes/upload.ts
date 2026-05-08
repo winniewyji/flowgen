@@ -1,5 +1,6 @@
 /**
  * 上传路由 - 处理多类型文件上传和 Confluence 内容获取
+ * 支持高并发场景，优化文件并行处理
  */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
@@ -25,7 +26,9 @@ const UPLOAD_CONFIG = {
   maxFiles: parseInt(process.env.MAX_UPLOAD_FILES || '20', 10),        // 最大文件数
   maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '50', 10) * 1024 * 1024,  // 单文件最大 50MB
   maxTotalSize: parseInt(process.env.MAX_TOTAL_SIZE || '200', 10) * 1024 * 1024,  // 总大小最大 200MB
-  supportedTypes: ['pdf', 'excel', 'word', 'csv', 'txt', 'markdown', 'image']
+  supportedTypes: ['pdf', 'excel', 'word', 'csv', 'txt', 'markdown', 'image'],
+  maxConcurrentAI: parseInt(process.env.MAX_CONCURRENT_AI || '5', 10),  // 最大并发 AI 请求
+  aiTimeoutMs: parseInt(process.env.AI_TIMEOUT_MS || '60000', 10),     // AI 请求超时 60s
 };
 
 // 获取 Confluence 配置
@@ -46,11 +49,41 @@ function parseBase64Image(dataUrl: string): { mimeType: string; base64: string }
   return { mimeType: match[1], base64: match[2] };
 }
 
+// 信号量，控制并发 AI 请求数量
+let activeAIRequests = 0;
+const aiSemaphore = async <T>(fn: () => Promise<T>): Promise<T> => {
+  while (activeAIRequests >= UPLOAD_CONFIG.maxConcurrentAI) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  activeAIRequests++;
+  try {
+    return await fn();
+  } finally {
+    activeAIRequests--;
+  }
+};
+
+// 带超时的 fetch
+const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: number): Promise<Response> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 /**
  * 多文件上传接口
  * 支持：PDF, Excel, Word, CSV, TXT, 图片 等
+ * 并行处理文件，支持高并发
  */
 router.post('/upload/files', async (req: Request, res: Response) => {
+  // 设置响应超时，防止连接过早关闭
+  req.setTimeout(UPLOAD_CONFIG.aiTimeoutMs * 2);
+  
   try {
     const { files, prompt, outputFormat, model } = req.body as {
       files?: Array<{ name: string; data: string; mimeType?: string }>;
@@ -104,143 +137,44 @@ router.post('/upload/files', async (req: Request, res: Response) => {
     const finalOutputFormat = outputFormat || 'text';
     const analysisPrompt = prompt || '请分析这个文档的内容，提取关键信息。';
 
-    const results: Array<{
-      filename: string;
-      success: boolean;
-      type: string;
-      content?: string;
-      error?: string;
-    }> = [];
-
-    for (const file of files) {
-      try {
-        const fileType = detectFileType(file.name, file.mimeType);
-        
-        // 处理 base64 数据
-        let content = file.data;
-        if (content.startsWith('data:')) {
-          const parsed = parseBase64Image(content);
-          if (parsed) {
-            content = Buffer.from(parsed.base64, 'base64').toString('utf-8');
-          }
-        } else {
-          // 尝试解码 base64
+    // 并行处理所有文件（使用 Promise.allSettled 确保部分失败不影响其他）
+    const fileResults = await Promise.all(
+      files.map(file => 
+        aiSemaphore(async () => {
           try {
-            content = Buffer.from(content, 'base64').toString('utf-8');
-          } catch {
-            // 保持原样
+            return await processSingleFile(file, finalModel, finalOutputFormat, analysisPrompt);
+          } catch (err) {
+            return {
+              filename: file.name,
+              success: false,
+              type: 'unknown',
+              error: err instanceof Error ? err.message : '处理失败'
+            };
           }
-        }
-
-        let parsedContent = '';
-        
-        switch (fileType) {
-          case 'csv':
-            parsedContent = parseCSV(content);
-            break;
-          case 'image':
-            // 图片需要 AI 分析
-            if (finalOutputFormat === 'flowchart') {
-              // 提取流程图
-              const diagramResult = await extractDiagramFromImage(file.data, 'openai');
-              results.push({
-                filename: file.name,
-                success: diagramResult.success,
-                type: 'diagram',
-                content: diagramResult.diagramCode || diagramResult.text,
-                error: diagramResult.error
-              });
-              continue;
-            } else {
-              // 分析图片内容
-              const imageResult = await analyzeImage(file.data, analysisPrompt, 'openai');
-              results.push({
-                filename: file.name,
-                success: imageResult.success,
-                type: 'image_analysis',
-                content: imageResult.text,
-                error: imageResult.error
-              });
-              continue;
-            }
-          case 'pdf':
-            try {
-              const pdfResult = await parsePDF(Buffer.from(content));
-              parsedContent = pdfResult.text;
-            } catch {
-              parsedContent = content.substring(0, 50000);
-            }
-            break;
-          case 'excel':
-            try {
-              const excelResult = await parseExcel(Buffer.from(content));
-              parsedContent = excelResult.text;
-            } catch {
-              parsedContent = content.substring(0, 50000);
-            }
-            break;
-          case 'word':
-            try {
-              parsedContent = await parseWord(Buffer.from(content));
-            } catch {
-              parsedContent = content.substring(0, 50000);
-            }
-            break;
-          case 'txt':
-          case 'markdown':
-            parsedContent = content.substring(0, 100000);
-          default:
-            parsedContent = content.substring(0, 10000);
-        }
-
-        // 使用 AI 分析文档内容
-        const analysisResult = await analyzeDocumentContent(
-          parsedContent,
-          file.name,
-          analysisPrompt,
-          finalModel
-        );
-
-        results.push({
-          filename: file.name,
-          success: analysisResult.success,
-          type: fileType,
-          content: analysisResult.text || analysisResult.code,
-          error: analysisResult.error
-        });
-      } catch (err) {
-        results.push({
-          filename: file.name,
-          success: false,
-          type: 'unknown',
-          error: err instanceof Error ? err.message : '处理失败'
-        });
-      }
-    }
+        })
+      )
+    );
 
     // 如果指定了输出格式，对所有内容进行汇总生成
-    if (finalOutputFormat !== 'text' && results.length > 0) {
-      const combinedContent = results
+    if (finalOutputFormat !== 'text' && fileResults.length > 0) {
+      const combinedContent = fileResults
         .filter(r => r.success && r.content)
         .map(r => `【${r.filename}】\n${r.content}`)
         .join('\n\n---\n\n');
 
-      const structuredResult = await generateStructuredOutput(
-        combinedContent,
-        analysisPrompt,
-        finalOutputFormat,
-        finalModel
+      const structuredResult = await aiSemaphore(() => 
+        generateStructuredOutput(combinedContent, analysisPrompt, finalOutputFormat, finalModel)
       );
 
       res.json({
         success: true,
-        results,
+        results: fileResults,
         structuredOutput: structuredResult.success ? structuredResult.code : null
       });
     } else {
       res.json({
         success: true,
-        results
+        results: fileResults
       });
     }
   } catch (error) {
@@ -250,6 +184,105 @@ router.post('/upload/files', async (req: Request, res: Response) => {
     });
   }
 });
+
+// 单文件处理辅助函数
+async function processSingleFile(
+  file: { name: string; data: string; mimeType?: string },
+  model: string,
+  outputFormat: string,
+  prompt: string
+): Promise<{ filename: string; success: boolean; type: string; content?: string; error?: string }> {
+  const fileType = detectFileType(file.name, file.mimeType);
+  
+  // 处理 base64 数据
+  let content = file.data;
+  if (content.startsWith('data:')) {
+    const parsed = parseBase64Image(content);
+    if (parsed) {
+      content = Buffer.from(parsed.base64, 'base64').toString('utf-8');
+    }
+  } else {
+    try {
+      content = Buffer.from(content, 'base64').toString('utf-8');
+    } catch {
+      // 保持原样
+    }
+  }
+
+  let parsedContent = '';
+  
+  switch (fileType) {
+    case 'csv':
+      parsedContent = parseCSV(content);
+      break;
+    case 'image':
+      if (outputFormat === 'flowchart') {
+        const diagramResult = await extractDiagramFromImage(file.data, 'openai');
+        return {
+          filename: file.name,
+          success: diagramResult.success,
+          type: 'diagram',
+          content: diagramResult.diagramCode || diagramResult.text,
+          error: diagramResult.error
+        };
+      } else {
+        const imageResult = await analyzeImage(file.data, prompt, 'openai');
+        return {
+          filename: file.name,
+          success: imageResult.success,
+          type: 'image_analysis',
+          content: imageResult.text,
+          error: imageResult.error
+        };
+      }
+    case 'pdf':
+      try {
+        const pdfResult = await parsePDF(Buffer.from(content));
+        parsedContent = pdfResult.text;
+      } catch {
+        parsedContent = content.substring(0, 50000);
+      }
+      break;
+    case 'excel':
+      try {
+        const excelResult = await parseExcel(Buffer.from(content));
+        parsedContent = excelResult.text;
+      } catch {
+        parsedContent = content.substring(0, 50000);
+      }
+      break;
+    case 'word':
+      try {
+        parsedContent = await parseWord(Buffer.from(content));
+      } catch {
+        parsedContent = content.substring(0, 50000);
+      }
+      break;
+    case 'txt':
+    case 'markdown':
+      parsedContent = content.substring(0, 100000);
+    default:
+      parsedContent = content.substring(0, 10000);
+  }
+
+  // 使用 AI 分析文档内容（带超时控制）
+  const analysisResult = await aiSemaphore(() => 
+    Promise.race([
+      analyzeDocumentContent(parsedContent, file.name, prompt, model),
+      new Promise<ReturnType<typeof analyzeDocumentContent>>((_, reject) => 
+        setTimeout(() => reject(new Error('AI 请求超时')), UPLOAD_CONFIG.aiTimeoutMs)
+      )
+    ])
+  );
+
+  return {
+    filename: file.name,
+    success: analysisResult.success,
+    type: fileType,
+    content: analysisResult.text || analysisResult.code,
+    error: analysisResult.error
+  };
+}
 
 // 上传并分析图片
 router.post('/upload/image', async (req: Request, res: Response) => {
