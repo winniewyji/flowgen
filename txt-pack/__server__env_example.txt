@@ -1,0 +1,61 @@
+# ===========================================
+# FlowGen - AI 工作流助手配置
+# ===========================================
+
+# ============ AI 模型配置 ============
+
+# MiniMax API (默认主模型)
+MINIMAX_API_KEY=your_minimax_key_here
+MINIMAX_BASE_URL=https://api.minimax.chat/v1
+
+# OpenAI API (可选)
+OPENAI_API_KEY=your_openai_key_here
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o
+
+# ============ Jira 配置 (可选) ============
+# 用于将 AI 生成的内容推送到 Jira
+
+JIRA_BASE_URL=https://your-domain.atlassian.net
+JIRA_EMAIL=your-email@company.com
+JIRA_API_TOKEN=your_jira_api_token
+JIRA_DEFAULT_PROJECT=PROJECT_KEY
+JIRA_DEFAULT_TYPE=Story  # 可选值: Epic, Story, Task, Bug, Subtask
+
+# ============ Confluence 配置 (可选) ============
+# 用于将 AI 生成的内容推送到 Confluence
+
+CONFLUENCE_BASE_URL=https://your-domain.atlassian.net/wiki
+CONFLUENCE_EMAIL=your-email@company.com
+CONFLUENCE_API_TOKEN=your_confluence_api_token
+CONFLUENCE_DEFAULT_SPACE=SPACE_KEY
+CONFLUENCE_DEFAULT_PARENT_PAGE_ID=123456789  # 可选，父页面 ID
+
+# ============ 服务端口 ============
+PORT=3001
+
+# ============ 文件上传配置 ============
+# 单文件最大大小 (MB)
+MAX_FILE_SIZE=50
+
+# 最大文件数量
+MAX_UPLOAD_FILES=20
+
+# 总上传大小限制 (MB)
+MAX_TOTAL_SIZE=200
+
+# ============ 高并发配置 ============
+# 最大并发 AI 请求数 (控制对 API 的请求频率)
+MAX_CONCURRENT_AI=5
+
+# AI 请求超时 (毫秒)
+AI_TIMEOUT_MS=60000
+
+# API 速率限制配置
+# 速率限制时间窗口 (毫秒)
+RATE_LIMIT_WINDOW_MS=60000
+# 时间窗口内最大请求数
+RATE_LIMIT_MAX=100
+
+# CORS 允许的来源 (* 表示全部)
+CORS_ORIGIN=*
