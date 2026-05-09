@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import diagramRouter from './routes/diagram.js';
 import productivityRouter from './routes/productivity.js';
 import uploadRouter from './routes/upload.js';
+import costRouter from './routes/cost.js';
+import memoryRouter from './routes/memory.js';
 import { rateLimit } from 'express-rate-limit';
 
 dotenv.config();
@@ -54,6 +56,10 @@ app.use('/api', apiLimiter);
 app.use('/api', diagramRouter);
 app.use('/api', productivityRouter);
 app.use('/api', uploadRouter);
+app.use('/api', costRouter);
+
+// 记忆与自学习 API (self-improving + elite-longterm-memory)
+app.use('/api/memory', memoryRouter);
 
 // Health check
 app.get('/health', (_req, res) => {
