@@ -1,12 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import compression from 'compression';
+import { rateLimit, MemoryStore } from 'express-rate-limit';
 import diagramRouter from './routes/diagram.js';
 import productivityRouter from './routes/productivity.js';
 import uploadRouter from './routes/upload.js';
 import costRouter from './routes/cost.js';
 import memoryRouter from './routes/memory.js';
-import { rateLimit } from 'express-rate-limit';
 
 dotenv.config();
 
@@ -16,7 +17,7 @@ const PORT = process.env.PORT || 3001;
 // ============ 高并发优化中间件 ============
 
 // Gzip 压缩
-app.use(require('compression')());
+app.use(compression());
 
 // CORS 配置 - 支持多人同时访问
 app.use(cors({
@@ -45,7 +46,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // 允许高并发：使用内存存储（生产环境建议用 Redis）
-  store: new (require('express-rate-limit').MemoryStore)(),
+  store: new MemoryStore(),
 });
 
 

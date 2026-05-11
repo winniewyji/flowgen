@@ -174,8 +174,8 @@ export async function fetchPagesBySpace(
  */
 export async function searchConfluence(
   query: string,
-  spaceKey?: string,
-  config: ConfluenceConfig
+  config: ConfluenceConfig,
+  spaceKey?: string
 ): Promise<{ success: boolean; results?: ConfluenceContent[]; error?: string }> {
   try {
     const auth = createAuth(config.email, config.apiToken);

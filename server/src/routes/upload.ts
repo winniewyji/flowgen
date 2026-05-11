@@ -8,6 +8,9 @@ import { analyzeImage, extractDiagramFromImage } from '../services/vision/index.
 import { 
   detectFileType, 
   parseCSV, 
+  parsePDF, 
+  parseExcel, 
+  parseWord, 
   analyzeDocumentContent, 
   generateStructuredOutput 
 } from '../services/document/parser.js';
@@ -64,7 +67,7 @@ const aiSemaphore = async <T>(fn: () => Promise<T>): Promise<T> => {
 };
 
 // 带超时的 fetch
-const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: number): Promise<Response> => {
+const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: number): Promise<globalThis.Response> => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -222,7 +225,7 @@ async function processSingleFile(
           filename: file.name,
           success: diagramResult.success,
           type: 'diagram',
-          content: diagramResult.diagramCode || diagramResult.text,
+          content: diagramResult.diagramCode || (diagramResult as any).text,
           error: diagramResult.error
         };
       } else {
@@ -231,7 +234,7 @@ async function processSingleFile(
           filename: file.name,
           success: imageResult.success,
           type: 'image_analysis',
-          content: imageResult.text,
+          content: (imageResult as any).text,
           error: imageResult.error
         };
       }
@@ -279,7 +282,7 @@ async function processSingleFile(
     filename: file.name,
     success: analysisResult.success,
     type: fileType,
-    content: analysisResult.text || analysisResult.code,
+    content: (analysisResult as any).text || analysisResult.code,
     error: analysisResult.error
   };
 }
@@ -317,7 +320,7 @@ router.post('/upload/image', async (req: Request, res: Response) => {
     if (finalAction === 'extract-diagram') {
       result = await extractDiagramFromImage(imageBase64, finalModel);
     } else {
-      result = await analyzeImage(imageBase64, prompt, finalModel);
+      result = await analyzeImage(imageBase64, prompt || '', finalModel);
     }
 
     res.json(result);
@@ -559,7 +562,7 @@ router.post('/confluence/search', async (req: Request, res: Response) => {
       return;
     }
 
-    const searchResult = await searchConfluence(query, spaceKey, config);
+    const searchResult = await searchConfluence(query, config, spaceKey);
     if (!searchResult.success) {
       res.status(500).json({ success: false, error: searchResult.error });
       return;

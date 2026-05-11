@@ -16,5 +16,6 @@ export interface GenerateOptions {
 export interface GenerateResult {
   success: boolean;
   code?: string;
+  text?: string;  // 兼容部分返回值
   error?: string;
 }
